@@ -1,0 +1,15 @@
+[package]
+name = "repo_walker"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+walkdir = "2.3"
+ignore = "0.4"
+clap = { version = "4.3", features = ["derive"] }
+regex = "1.10.5"
+itertools = "0.13.0"
+gix = { version = "0.63", features = ["blob-diff"]}
+hex = "0.4.3"
