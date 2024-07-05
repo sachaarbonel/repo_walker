@@ -16,9 +16,7 @@ Repo Walker is a command-line tool for analyzing Git repositories and formatting
 Ensure you have Rust and Cargo installed on your system. Then, clone this repository and build the project:
 
 ```bash
-git clone https://github.com/yourusername/repo-walker.git
-cd repo-walker
-cargo build --release
+cargo install --git https://github.com/yourusername/repo-walker.git
 ```
 
 The executable will be available at `target/release/repo-walker`.
