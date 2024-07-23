@@ -154,11 +154,6 @@ fn print_file_contents_with_context(
             println!();
         }
     }
-
-    if !printed_something {
-        println!("No matches found in this file.");
-    }
-    println!();
 }
 
 fn is_likely_binary(path: &std::path::Path) -> bool {
