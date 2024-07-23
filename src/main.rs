@@ -85,15 +85,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     match fs::read_to_string(path) {
                         Ok(contents) => {
-                            if let Some(ref regex) = pattern {
-                                print_file_contents_with_context(
-                                    path,
-                                    &contents,
-                                    regex,
-                                    args.context_lines,
-                                );
-                            } else {
-                                print_file_contents(path, &contents);
+                            if !contents.is_empty() {
+                                if let Some(ref regex) = pattern {
+                                    print_file_contents_with_context(
+                                        path,
+                                        &contents,
+                                        regex,
+                                        args.context_lines,
+                                    );
+                                } else {
+                                    print_file_contents(path, &contents);
+                                }
                             }
                         }
                         Err(e) => eprintln!("Error reading file {}: {}", path.display(), e),
