@@ -19,8 +19,6 @@ Ensure you have Rust and Cargo installed on your system. Then, clone this reposi
 cargo install --git https://github.com/sachaarbonel/repo_walker.git
 ```
 
-The executable will be available at `target/release/repo-walker`.
-
 ## Usage
 
 ### Basic Usage
