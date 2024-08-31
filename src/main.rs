@@ -2,15 +2,18 @@ use clap::Parser;
 use gix::bstr::BString;
 use gix::bstr::ByteSlice;
 use gix::diff::tree::recorder::Change;
-use gix::diff::tree::Changes;
-use gix::diff::tree::Recorder;
-use gix::diff::tree::State;
 use gix::objs::tree::EntryMode;
-use gix::objs::Find;
-use gix::objs::TreeRefIter;
 use gix::Repository;
 use ignore::WalkBuilder;
 use regex::Regex;
+use repo_walker::diff_trees;
+use repo_walker::file_extension_matches;
+use repo_walker::find_revision;
+use repo_walker::find_tree;
+use repo_walker::is_likely_binary;
+use repo_walker::open_repo;
+use repo_walker::print_file_content;
+use repo_walker::Args;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -26,28 +29,6 @@ impl AsRef<Path> for GitPath {
     fn as_ref(&self) -> &Path {
         &self.0
     }
-}
-
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct Args {
-    #[arg(short, long)]
-    path: PathBuf,
-
-    #[arg(short, long)]
-    pattern: Option<String>,
-
-    #[arg(short, long, value_delimiter = ',')]
-    extensions: Option<Vec<String>>,
-
-    #[arg(short, long, default_value = "3")]
-    context_lines: usize,
-
-    #[arg(long, help = "Git revision (tag, branch, or commit) to diff from")]
-    git_from: Option<String>,
-
-    #[arg(long, help = "Git revision (tag, branch, or commit) to diff to")]
-    git_to: Option<String>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -163,88 +144,10 @@ fn print_file_contents_with_context(
     }
 }
 
-fn is_likely_binary(path: &std::path::Path) -> bool {
-    let extension = path
-        .extension()
-        .and_then(|os_str| os_str.to_str())
-        .unwrap_or("");
-
-    match extension.to_lowercase().as_str() {
-        "jpg" | "jpeg" | "png" | "gif" | "bmp" | "tiff" | "pdf" | "doc" | "docx" | "xls"
-        | "xlsx" | "ppt" | "pptx" | "zip" | "tar" | "gz" | "7z" | "rar" | "exe" | "dll" | "so"
-        | "dylib" | "mp3" | "mp4" | "avi" | "mov" | "flv" | "db" | "sqlite" => true,
-        _ => false,
-    }
-}
-
-fn file_extension_matches(path: impl AsRef<Path>, extensions: &[String]) -> bool {
-    let extension = path
-        .as_ref()
-        .extension()
-        .and_then(|os_str| os_str.to_str())
-        .unwrap_or("");
-
-    extensions.iter().any(|ext| ext == extension)
-}
-
-fn repo(dir: impl AsRef<Path>) -> Result<Repository, Box<dyn std::error::Error>> {
-    let git = gix::open::Options::isolated()
-        .filter_config_section(|_| false)
-        .open(dir.as_ref())?;
-
-    Ok(git.to_thread_local())
-}
-
-fn find_revision<'a>(
-    repo: &'a Repository,
-    revision_name: &str,
-) -> Result<gix::Object<'a>, Box<dyn std::error::Error>> {
-    match repo.rev_parse_single(revision_name) {
-        Ok(id) => repo.find_object(id).map_err(|e| {
-            format!(
-                "Failed to find object for revision '{}': {}",
-                revision_name, e
-            )
-            .into()
-        }),
-        Err(e) => Err(format!("Failed to resolve revision '{}': {}", revision_name, e).into()),
-    }
-}
-
-fn find_tree<'a>(
-    repo: &'a Repository,
-    obj: gix::Object<'a>,
-    buf: &'a mut Vec<u8>,
-) -> Result<TreeRefIter<'a>, Box<dyn std::error::Error>> {
-    let db = &repo.objects;
-    let tree = obj.peel_to_tree()?;
-    let tree_id = tree.id();
-    let data = db.try_find(&tree_id, buf).unwrap().unwrap();
-    let tree = data.try_into_tree_iter().unwrap();
-    Ok(tree)
-}
-
-fn diff_tags<'a>(
-    repo: &'a Repository,
-    previous_tree: TreeRefIter,
-    current_tree: TreeRefIter,
-) -> Result<Vec<Change>, Box<dyn std::error::Error>> {
-    let db = &repo.objects;
-
-    let mut recorder = Recorder::default();
-    Changes::from(previous_tree).needed_to_obtain(
-        current_tree,
-        &mut State::default(),
-        db,
-        &mut recorder,
-    )?;
-    Ok(recorder.records)
-}
-
 fn print_git_diff(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let mut buf1 = Vec::new();
     let mut buf2 = Vec::new();
-    let repo = repo(&args.path)?;
+    let repo = open_repo(&args.path)?;
 
     let from_rev = args.git_from.as_deref().unwrap_or("HEAD");
     let to_rev = args.git_to.as_deref().unwrap_or("HEAD");
@@ -255,7 +158,7 @@ fn print_git_diff(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let to_obj = find_revision(&repo, to_rev)?;
     let from_tree = find_tree(&repo, from_obj, &mut buf1)?;
     let to_tree = find_tree(&repo, to_obj, &mut buf2)?;
-    let changes = diff_tags(&repo, from_tree, to_tree)?;
+    let changes = diff_trees(&repo, from_tree, to_tree)?;
 
     let pattern = args.pattern.as_ref().map(|p| Regex::new(p).unwrap());
     let extensions: Option<Vec<String>> = args
@@ -365,44 +268,6 @@ fn process_change(
 
     println!("```");
     println!();
-
-    Ok(())
-}
-
-fn print_file_content(
-    repo: &Repository,
-    oid: gix::ObjectId,
-    prefix: &str,
-    pattern: &Option<Regex>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let object = repo.find_object(oid)?;
-    let content = object.data.as_slice();
-
-    let mut start = 0;
-    while start < content.len() {
-        let end = content[start..]
-            .iter()
-            .position(|&b| b == b'\n')
-            .map_or(content.len(), |i| start + i);
-        let line = &content[start..end];
-
-        match std::str::from_utf8(line) {
-            Ok(utf8_line) => {
-                if let Some(ref regex) = pattern {
-                    if regex.is_match(utf8_line) {
-                        println!("{}{}", prefix, utf8_line);
-                    }
-                } else {
-                    println!("{}{}", prefix, utf8_line);
-                }
-            }
-            Err(_) => {
-                println!("{}[Non-UTF-8 data: {}]", prefix, hex::encode(line));
-            }
-        }
-
-        start = end + 1;
-    }
 
     Ok(())
 }
