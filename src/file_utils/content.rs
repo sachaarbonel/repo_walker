@@ -1,6 +1,6 @@
-use std::path::Path;
 use gix::Repository;
 use regex::Regex;
+use std::path::Path;
 
 pub fn file_extension_matches(path: impl AsRef<Path>, extensions: &[String]) -> bool {
     let extension = path
@@ -54,7 +54,8 @@ pub fn print_file_content(
                 }
             }
             Err(_) => {
-                println!("{}[Non-UTF-8 data: {}]", prefix, hex::encode(line));
+                // You can choose to log this if needed
+                eprintln!("Skipping non-UTF-8 data in file: {}", oid);
             }
         }
 

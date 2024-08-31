@@ -92,7 +92,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                         }
-                        Err(e) => eprintln!("Error reading file {}: {}", path.display(), e),
+                        Err(e) => {
+                            if e.kind() == std::io::ErrorKind::InvalidData {
+                                eprintln!("Skipping non-UTF-8 file: {}", path.display());
+                            } else {
+                                eprintln!("Error reading file {}: {}", path.display(), e);
+                            }
+                        }
                     }
                 }
             }
