@@ -38,8 +38,8 @@ repo_walker --path /path/to/repo --git-from v1.0 --git-to v2.0 [OPTIONS] | pbcop
 ### Options
 
 - `--path <PATH>`: Path to the Git repository (required)
-- `--git-from <TAG>`: Starting tag for comparison
-- `--git-to <TAG>`: Ending tag for comparison
+- `--git-from <REVISION>`: Starting tag, commit or branch for comparison
+- `--git-to <REVISION>`: Ending tag,commit or branch for for comparison
 - `--extensions <EXT1,EXT2,...>`: Comma-separated list of file extensions to include
 - `--pattern <REGEX>`: Regex pattern to filter file contents
 - `--context-lines <NUM>`: Number of context lines to show (default: 3)
