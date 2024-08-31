@@ -4,7 +4,7 @@ Repo Walker is a command-line tool for analyzing Git repositories and formatting
 
 ## Features
 
-- Compare changes between two Git tags
+- Compare changes between two Git tags, branches or commits
 - Filter files by extension
 - Apply regex pattern matching to file contents
 - Handle non-UTF-8 file contents
@@ -29,7 +29,7 @@ repo_walker --path /path/to/repo [OPTIONS] | pbcopy
 
 This command will analyze the repository and copy the output to your clipboard, ready to paste into an AI assistant chat.
 
-### Compare two tags
+### Compare two tags, branches or commits
 
 ```bash
 repo_walker --path /path/to/repo --git-from v1.0 --git-to v2.0 [OPTIONS] | pbcopy
@@ -46,12 +46,12 @@ repo_walker --path /path/to/repo --git-from v1.0 --git-to v2.0 [OPTIONS] | pbcop
 
 ## Examples
 
-1. Compare two tags, showing only Rust files, and copy to clipboard:
+1. Compare two tags, branches or commits, showing only Rust files, and copy to clipboard:
    ```bash
    repo_walker --path /path/to/repo --git-from v0.1.0 --git-to v0.2.0 --extensions rs | pbcopy
    ```
 
-2. Compare tags with more context lines and copy to clipboard:
+2. Compare tags, branches or commits with more context lines and copy to clipboard:
    ```bash
    repo_walker --path /path/to/repo --git-from v1.0 --git-to v2.0 --context-lines 5 | pbcopy
    ```
