@@ -43,10 +43,10 @@ struct Args {
     #[arg(short, long, default_value = "3")]
     context_lines: usize,
 
-    #[arg(long)]
+    #[arg(long, help = "Git revision (tag, branch, or commit) to diff from")]
     git_from: Option<String>,
 
-    #[arg(long)]
+    #[arg(long, help = "Git revision (tag, branch, or commit) to diff to")]
     git_to: Option<String>,
 }
 
@@ -156,6 +156,11 @@ fn print_file_contents_with_context(
             println!();
         }
     }
+
+    if !printed_something {
+        println!("No matches found in this file.");
+        println!();
+    }
 }
 
 fn is_likely_binary(path: &std::path::Path) -> bool {
@@ -190,36 +195,29 @@ fn repo(dir: impl AsRef<Path>) -> Result<Repository, Box<dyn std::error::Error>>
     Ok(git.to_thread_local())
 }
 
-fn find_tag<'a>(
+fn find_revision<'a>(
     repo: &'a Repository,
-    tag_name: &str,
+    revision_name: &str,
 ) -> Result<gix::Object<'a>, Box<dyn std::error::Error>> {
-    let reference = repo.find_reference(tag_name)?;
-    let oid = reference.id();
-    let object = repo.find_object(oid)?;
-
-    // If it's already a commit, return it directly
-    if object.kind == gix::object::Kind::Commit {
-        return Ok(object);
+    match repo.rev_parse_single(revision_name) {
+        Ok(id) => repo.find_object(id).map_err(|e| {
+            format!(
+                "Failed to find object for revision '{}': {}",
+                revision_name, e
+            )
+            .into()
+        }),
+        Err(e) => Err(format!("Failed to resolve revision '{}': {}", revision_name, e).into()),
     }
-
-    // If it's a tag, peel it to the target object
-    if object.kind == gix::object::Kind::Tag {
-        let tag = object.peel_tags_to_end()?;
-        return Ok(tag);
-    }
-
-    Err("Unexpected object kind".into())
 }
+
 fn find_tree<'a>(
     repo: &'a Repository,
-    tag: gix::Object<'a>,
+    obj: gix::Object<'a>,
     buf: &'a mut Vec<u8>,
 ) -> Result<TreeRefIter<'a>, Box<dyn std::error::Error>> {
     let db = &repo.objects;
-    let oid = tag.id();
-    let object = repo.find_object(oid)?;
-    let tree = object.peel_to_tree()?;
+    let tree = obj.peel_to_tree()?;
     let tree_id = tree.id();
     let data = db.try_find(&tree_id, buf).unwrap().unwrap();
     let tree = data.try_into_tree_iter().unwrap();
@@ -242,17 +240,19 @@ fn diff_tags<'a>(
     )?;
     Ok(recorder.records)
 }
+
 fn print_git_diff(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let mut buf1 = Vec::new();
     let mut buf2 = Vec::new();
     let repo = repo(&args.path)?;
-    println!(
-        "### Git diff from {} to {}",
-        args.git_from.as_ref().unwrap(),
-        args.git_to.as_ref().unwrap()
-    );
-    let from_obj = find_tag(&repo, args.git_from.as_ref().unwrap())?;
-    let to_obj = find_tag(&repo, args.git_to.as_ref().unwrap())?;
+
+    let from_rev = args.git_from.as_deref().unwrap_or("HEAD");
+    let to_rev = args.git_to.as_deref().unwrap_or("HEAD");
+
+    println!("### Git diff from {} to {}", from_rev, to_rev);
+
+    let from_obj = find_revision(&repo, from_rev)?;
+    let to_obj = find_revision(&repo, to_rev)?;
     let from_tree = find_tree(&repo, from_obj, &mut buf1)?;
     let to_tree = find_tree(&repo, to_obj, &mut buf2)?;
     let changes = diff_tags(&repo, from_tree, to_tree)?;
@@ -349,17 +349,12 @@ fn process_change(
     prefix: &str,
     previous_oid: Option<gix::ObjectId>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // let path_str = std::str::from_utf8(path)?;
-
-    // Apply extension filter
     if let Some(ref exts) = extensions {
-        if !file_extension_matches(path, exts) {
+        if !file_extension_matches(path.as_ref(), exts) {
             return Ok(());
         }
     }
 
-    // println!("File: {}", path.as_ref().display());
-    // println!("Mode: {#:o}", entry_mode);
     println!("OID: {}", oid);
     if let Some(prev_oid) = previous_oid {
         println!("Previous OID: {}", prev_oid);
@@ -383,7 +378,6 @@ fn print_file_content(
     let object = repo.find_object(oid)?;
     let content = object.data.as_slice();
 
-    // Process the content line by line, handling non-UTF-8 sequences
     let mut start = 0;
     while start < content.len() {
         let end = content[start..]
@@ -403,7 +397,6 @@ fn print_file_content(
                 }
             }
             Err(_) => {
-                // Handle non-UTF-8 data by printing hexadecimal representation
                 println!("{}[Non-UTF-8 data: {}]", prefix, hex::encode(line));
             }
         }
