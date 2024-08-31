@@ -43,6 +43,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .extensions
         .map(|exts| exts.into_iter().map(|e| e.to_lowercase()).collect());
 
+    let excludes: Option<Vec<Regex>> = args
+        .excludes
+        .as_ref()
+        .map(|patterns| patterns.iter().map(|p| Regex::new(p).unwrap()).collect());
     let walker = WalkBuilder::new(&args.path)
         .hidden(false)
         .git_ignore(true)
@@ -62,6 +66,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     if is_likely_binary(path) {
                         continue;
+                    }
+
+                    if let Some(ref regexes) = excludes {
+                        if regexes
+                            .iter()
+                            .any(|re| re.is_match(path.to_str().unwrap_or("")))
+                        {
+                            continue;
+                        }
                     }
 
                     match fs::read_to_string(path) {
@@ -166,6 +179,11 @@ fn print_git_diff(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         .as_ref()
         .map(|exts| exts.iter().map(|e| e.to_lowercase()).collect());
 
+    let excludes: Option<Vec<Regex>> = args
+        .excludes
+        .as_ref()
+        .map(|patterns| patterns.iter().map(|p| Regex::new(p).unwrap()).collect());
+
     for change in changes {
         match change {
             Change::Addition {
@@ -182,6 +200,7 @@ fn print_git_diff(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
                     oid,
                     "+",
                     None,
+                    &excludes,
                 ) {
                     eprintln!("Error processing addition for {:?}: {}", path, e);
                 }
@@ -200,6 +219,7 @@ fn print_git_diff(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
                     oid,
                     "-",
                     None,
+                    &excludes,
                 ) {
                     eprintln!("Error processing deletion for {:?}: {}", path, e);
                 }
@@ -220,6 +240,7 @@ fn print_git_diff(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
                     previous_oid,
                     "-",
                     None,
+                    &excludes,
                 ) {
                     eprintln!("Error processing modification (old) for {:?}: {}", path, e);
                 }
@@ -232,6 +253,7 @@ fn print_git_diff(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
                     oid,
                     "+",
                     Some(previous_oid),
+                    &excludes,
                 ) {
                     eprintln!("Error processing modification (new) for {:?}: {}", path, e);
                 }
@@ -251,9 +273,18 @@ fn process_change(
     oid: gix::ObjectId,
     prefix: &str,
     previous_oid: Option<gix::ObjectId>,
+    excludes: &Option<Vec<Regex>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(ref exts) = extensions {
         if !file_extension_matches(path.as_ref(), exts) {
+            return Ok(());
+        }
+    }
+    if let Some(ref regexes) = excludes {
+        if regexes
+            .iter()
+            .any(|re| re.is_match(path.as_ref().to_str().unwrap_or("")))
+        {
             return Ok(());
         }
     }

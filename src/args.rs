@@ -21,4 +21,7 @@ pub struct Args {
 
     #[arg(long, help = "Git revision (tag, branch, or commit) to diff to")]
     pub git_to: Option<String>,
+
+    #[arg(long, value_delimiter = ',', help = "Patterns to exclude from the results")]
+    pub excludes: Option<Vec<String>>,
 }
