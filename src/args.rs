@@ -7,7 +7,7 @@ pub struct Args {
     #[arg(short, long)]
     pub path: PathBuf,
 
-    #[arg(short, long)]
+    #[arg(short = 'm', long)]
     pub pattern: Option<String>,
 
     #[arg(short, long, value_delimiter = ',')]

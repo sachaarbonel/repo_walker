@@ -17,6 +17,9 @@ use repo_walker::Args;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod output;
+use output::OutputFormatter;
+
 struct GitPath(PathBuf);
 
 impl From<&BString> for GitPath {
@@ -33,9 +36,10 @@ impl AsRef<Path> for GitPath {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    let mut formatter = OutputFormatter::new();
 
     if args.git_from.is_some() || args.git_to.is_some() {
-        return print_git_diff(&args);
+        return print_git_diff(&args, &mut formatter);
     }
 
     let pattern = args.pattern.map(|p| Regex::new(&p)).transpose()?;
@@ -47,10 +51,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .excludes
         .as_ref()
         .map(|patterns| patterns.iter().map(|p| Regex::new(p).unwrap()).collect());
+
     let walker = WalkBuilder::new(&args.path)
         .hidden(false)
         .git_ignore(true)
         .build();
+
+    // Print repository header
+    formatter.print_header(
+        args.path.file_name().unwrap_or_default().to_string_lossy().as_ref(),
+        "current",
+    );
+
+    // Print directory structure
+    formatter.print_directory_structure(&args.path);
 
     for result in walker {
         match result {
@@ -86,9 +100,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         &contents,
                                         regex,
                                         args.context_lines,
+                                        &mut formatter,
                                     );
                                 } else {
-                                    print_file_contents(path, &contents);
+                                    formatter.print_file_contents(path, &contents);
                                 }
                             }
                         }
@@ -106,15 +121,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    Ok(())
-}
+    // Print final summary
+    formatter.print_summary();
 
-fn print_file_contents(path: &std::path::Path, contents: &str) {
-    println!("### File: {}", path.display());
-    println!("```");
-    println!("{}", contents);
-    println!("```");
-    println!();
+    Ok(())
 }
 
 fn print_file_contents_with_context(
@@ -122,30 +132,32 @@ fn print_file_contents_with_context(
     contents: &str,
     regex: &Regex,
     context_lines: usize,
+    formatter: &mut OutputFormatter,
 ) {
-    println!("### File: {}", path.display());
-
     let lines: Vec<&str> = contents.lines().collect();
     let mut printed_something = false;
 
     for (i, line) in lines.iter().enumerate() {
         if let Some(captures) = regex.captures(line) {
             printed_something = true;
-            println!("Match at line {}:", i + 1);
-
+            
             let start = i.saturating_sub(context_lines);
             let end = (i + context_lines + 1).min(lines.len());
 
-            println!("```");
-            for (j, context_line) in lines[start..end].iter().enumerate() {
-                let line_number = start + j + 1;
-                if line_number == i + 1 {
-                    println!("{}: > {}", line_number, context_line);
-                } else {
-                    println!("{}:   {}", line_number, context_line);
-                }
-            }
-            println!("```");
+            let context_content: String = lines[start..end]
+                .iter()
+                .enumerate()
+                .map(|(j, context_line)| {
+                    let line_number = start + j + 1;
+                    if line_number == i + 1 {
+                        format!("{:4}│ > {}\n", line_number, context_line)
+                    } else {
+                        format!("{:4}│   {}\n", line_number, context_line)
+                    }
+                })
+                .collect();
+
+            formatter.print_file_contents(path, &context_content);
 
             println!("Captured:");
             for (j, capture) in captures.iter().skip(1).enumerate() {
@@ -163,7 +175,7 @@ fn print_file_contents_with_context(
     }
 }
 
-fn print_git_diff(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
+fn print_git_diff(args: &Args, formatter: &mut OutputFormatter) -> Result<(), Box<dyn std::error::Error>> {
     let mut buf1 = Vec::new();
     let mut buf2 = Vec::new();
     let repo = open_repo(&args.path)?;
@@ -171,7 +183,11 @@ fn print_git_diff(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let from_rev = args.git_from.as_deref().unwrap_or("HEAD");
     let to_rev = args.git_to.as_deref().unwrap_or("HEAD");
 
-    println!("### Git diff from {} to {}", from_rev, to_rev);
+    // Print repository header with git revisions
+    formatter.print_header(
+        args.path.file_name().unwrap_or_default().to_string_lossy().as_ref(),
+        &format!("{} → {}", from_rev, to_rev),
+    );
 
     let from_obj = find_revision(&repo, from_rev)?;
     let to_obj = find_revision(&repo, to_rev)?;
@@ -267,6 +283,9 @@ fn print_git_diff(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Print final summary
+    formatter.print_summary();
+
     Ok(())
 }
 
@@ -275,7 +294,7 @@ fn process_change(
     path: impl AsRef<Path>,
     extensions: &Option<Vec<String>>,
     pattern: &Option<Regex>,
-    entry_mode: EntryMode,
+    _entry_mode: EntryMode,
     oid: gix::ObjectId,
     prefix: &str,
     previous_oid: Option<gix::ObjectId>,
