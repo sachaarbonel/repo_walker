@@ -5,7 +5,6 @@ use tree_sitter::{Parser, Query, QueryCursor};
 pub enum SupportedLanguage {
     Rust,
     JavaScript,
-    Python,
     Go,
 }
 
@@ -16,7 +15,6 @@ impl FromStr for SupportedLanguage {
         match s.to_lowercase().as_str() {
             "rs" | "rust" => Ok(SupportedLanguage::Rust),
             "js" | "javascript" => Ok(SupportedLanguage::JavaScript),
-            "py" | "python" => Ok(SupportedLanguage::Python),
             "go" => Ok(SupportedLanguage::Go),
             _ => Err(format!("Unsupported language: {}", s)),
         }
@@ -38,7 +36,6 @@ impl CodeParser {
         let language = match lang {
             SupportedLanguage::Rust => tree_sitter_rust::language(),
             SupportedLanguage::JavaScript => tree_sitter_javascript::language(),
-            SupportedLanguage::Python => tree_sitter_python::language(),
             SupportedLanguage::Go => tree_sitter_go::language(),
         };
 
@@ -46,14 +43,34 @@ impl CodeParser {
             .map_err(|e| format!("Error setting language: {}", e))
     }
 
+    fn get_comment_query(lang: &SupportedLanguage) -> &'static str {
+        match lang {
+            SupportedLanguage::Rust => "(
+                [(line_comment) (block_comment)] @comment
+            )",
+            SupportedLanguage::JavaScript => "(
+                (comment) @comment
+            )",
+            SupportedLanguage::Go => "(
+                (comment) @comment
+            )",
+        }
+    }
+
     pub fn remove_comments(&mut self, source_code: &str) -> String {
         let tree = self.parser.parse(source_code, None)
             .expect("Failed to parse code");
 
-        // Query to match comments
-        let query = Query::new(self.parser.language().unwrap(),
-            "(line_comment) @comment
-             (block_comment) @comment")
+        // Get the current language
+        let lang = match self.parser.language().unwrap() {
+            lang if lang == tree_sitter_rust::language() => SupportedLanguage::Rust,
+            lang if lang == tree_sitter_javascript::language() => SupportedLanguage::JavaScript,
+            lang if lang == tree_sitter_go::language() => SupportedLanguage::Go,
+            _ => return source_code.to_string(),
+        };
+
+        // Query to match comments based on language
+        let query = Query::new(self.parser.language().unwrap(), Self::get_comment_query(&lang))
             .expect("Failed to create query");
 
         let mut cursor = QueryCursor::new();
@@ -61,14 +78,33 @@ impl CodeParser {
 
         // Collect all comment ranges
         let mut comment_ranges: Vec<(usize, usize)> = matches
-            .map(|m| {
-                let node = m.captures[0].node;
-                (node.start_byte(), node.end_byte())
+            .flat_map(|m| {
+                m.captures.iter().map(|capture| {
+                    let node = capture.node;
+                    (node.start_byte(), node.end_byte())
+                })
             })
             .collect();
 
         // Sort ranges by start position
         comment_ranges.sort_by_key(|&(start, _)| start);
+
+        // Merge overlapping ranges
+        if !comment_ranges.is_empty() {
+            let mut merged = Vec::new();
+            let mut current = comment_ranges[0];
+
+            for &(start, end) in comment_ranges.iter().skip(1) {
+                if start <= current.1 {
+                    current.1 = current.1.max(end);
+                } else {
+                    merged.push(current);
+                    current = (start, end);
+                }
+            }
+            merged.push(current);
+            comment_ranges = merged;
+        }
 
         // Build result string excluding comments
         let mut result = String::new();
@@ -113,5 +149,52 @@ fn main() {
         assert!(!result.contains("// End of line comment"));
         assert!(result.contains("fn main()"));
         assert!(result.contains("println!(\"Hello\");"));
+    }
+
+    #[test]
+    fn test_javascript_comment_removal() {
+        let mut parser = CodeParser::new();
+        parser.set_language(SupportedLanguage::JavaScript).unwrap();
+        let code = r#"
+// Line comment
+function main() {
+    /* Block comment */
+    console.log("Hello"); // End of line comment
+    /* Multi
+       line
+       comment */
+}
+"#;
+        let result = parser.remove_comments(code);
+        assert!(!result.contains("// Line comment"));
+        assert!(!result.contains("/* Block comment */"));
+        assert!(!result.contains("// End of line comment"));
+        assert!(result.contains("function main()"));
+        assert!(result.contains("console.log(\"Hello\");"));
+    }
+
+    #[test]
+    fn test_go_comment_removal() {
+        let mut parser = CodeParser::new();
+        parser.set_language(SupportedLanguage::Go).unwrap();
+        let code = r#"
+// Line comment
+package main
+
+func main() {
+    /* Block comment */
+    fmt.Println("Hello") // End of line comment
+    /* Multi
+       line
+       comment */
+}
+"#;
+        let result = parser.remove_comments(code);
+        assert!(!result.contains("// Line comment"));
+        assert!(!result.contains("/* Block comment */"));
+        assert!(!result.contains("// End of line comment"));
+        assert!(result.contains("package main"));
+        assert!(result.contains("func main()"));
+        assert!(result.contains("fmt.Println(\"Hello\")"));
     }
 } 
