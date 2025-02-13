@@ -36,7 +36,8 @@ impl AsRef<Path> for GitPath {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let mut formatter = OutputFormatter::new();
+    let mut formatter = OutputFormatter::new()
+        .with_strip_comments(args.strip_comments);
 
     // Configure formatter with extensions and excludes if provided
     if let Some(extensions) = args.extensions.clone() {

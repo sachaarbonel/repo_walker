@@ -24,4 +24,7 @@ pub struct Args {
 
     #[arg(long, value_delimiter = ',', help = "Patterns to exclude from the results")]
     pub excludes: Option<Vec<String>>,
+
+    #[arg(long, help = "Strip comments from supported languages (Rust, JavaScript, Python, Go)")]
+    pub strip_comments: bool,
 }

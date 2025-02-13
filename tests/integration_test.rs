@@ -110,4 +110,61 @@ fn test_extension_filter() -> Result<(), Box<dyn std::error::Error>> {
     assert!(file_sections.iter().all(|section| !section.contains("README.md")));
     
     Ok(())
+}
+
+#[test]
+fn test_strip_comments_cli() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = TempDir::new()?;
+    let test_file = temp_dir.path().join("test.rs");
+    
+    // Create a test Rust file with comments
+    fs::write(&test_file, r#"
+// Line comment
+fn main() {
+    /* Block comment */
+    println!("Hello"); // End of line comment
+    /* Multi
+       line
+       comment */
+}
+"#)?;
+
+    // Run with --strip-comments
+    let mut cmd = Command::cargo_bin("repo_walker")?;
+    let assert = cmd
+        .arg("--path")
+        .arg(temp_dir.path())
+        .arg("--strip-comments")
+        .assert();
+
+    assert
+        .success()
+        .stdout(predicate::str::contains("fn main()"))
+        .stdout(predicate::str::contains("println!(\"Hello\");"))
+        .stdout(predicate::str::contains("test.rs"))
+        .stdout(predicate::str::contains("tokens"))
+        .stdout(predicate::str::contains("=".repeat(80)))
+        .stdout(predicate::str::contains("Repository Snapshot"))
+        .stdout(predicate::str::contains("Analysis Summary"))
+        .stdout(predicate::str::contains("Total tokens processed"))
+        .stdout(predicate::str::contains("GPT-4 context window sizes"))
+        .stdout(predicate::str::contains("8K context"))
+        .stdout(predicate::str::contains("32K context"));
+
+    // Run without --strip-comments
+    let mut cmd = Command::cargo_bin("repo_walker")?;
+    let assert = cmd
+        .arg("--path")
+        .arg(temp_dir.path())
+        .assert();
+
+    assert
+        .success()
+        .stdout(predicate::str::contains("// Line comment"))
+        .stdout(predicate::str::contains("/* Block comment */"))
+        .stdout(predicate::str::contains("// End of line comment"))
+        .stdout(predicate::str::contains("fn main()"))
+        .stdout(predicate::str::contains("println!(\"Hello\");"));
+    
+    Ok(())
 } 

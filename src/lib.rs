@@ -1,11 +1,13 @@
 mod git;
 mod file_utils;
 mod args;
+pub mod parser;
 
 pub use args::Args;
 pub use git::repository::{open_repo, find_revision, find_tree};
 pub use git::diff::diff_trees;
 pub use file_utils::content::{is_likely_binary, file_extension_matches, print_file_content};
+pub use parser::{CodeParser, SupportedLanguage};
 
 #[cfg(test)]
 mod tests {

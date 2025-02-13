@@ -4,6 +4,8 @@ use tiktoken_rs::p50k_base;
 use ignore::WalkBuilder;
 use std::collections::BTreeMap;
 use regex::Regex;
+use std::str::FromStr;
+use repo_walker::parser::{CodeParser, SupportedLanguage};
 
 #[cfg(test)]
 mod tests;
@@ -13,6 +15,7 @@ pub struct OutputFormatter {
     encoding: tiktoken_rs::CoreBPE,
     extensions: Option<Vec<String>>,
     excludes: Option<Vec<Regex>>,
+    strip_comments: bool,
 }
 
 impl OutputFormatter {
@@ -22,6 +25,7 @@ impl OutputFormatter {
             encoding: p50k_base().unwrap(),
             extensions: None,
             excludes: None,
+            strip_comments: false,
         }
     }
 
@@ -34,6 +38,11 @@ impl OutputFormatter {
         self.excludes = Some(excludes.into_iter()
             .filter_map(|pattern| Regex::new(&pattern).ok())
             .collect());
+        self
+    }
+
+    pub fn with_strip_comments(mut self, strip_comments: bool) -> Self {
+        self.strip_comments = strip_comments;
         self
     }
 
@@ -146,7 +155,27 @@ impl OutputFormatter {
             return;
         }
 
-        let tokens = self.count_tokens(contents);
+        // Try to determine the language from file extension and remove comments if supported
+        let contents = if self.strip_comments {
+            if let Some(extension) = path.extension().and_then(|e| e.to_str()) {
+                if let Ok(lang) = SupportedLanguage::from_str(extension) {
+                    let mut parser = CodeParser::new();
+                    if parser.set_language(lang).is_ok() {
+                        parser.remove_comments(contents)
+                    } else {
+                        contents.to_string()
+                    }
+                } else {
+                    contents.to_string()
+                }
+            } else {
+                contents.to_string()
+            }
+        } else {
+            contents.to_string()
+        };
+
+        let tokens = self.count_tokens(&contents);
         self.total_tokens += tokens;
 
         println!("\n{}", "=".repeat(80).blue());
@@ -155,7 +184,9 @@ impl OutputFormatter {
 
         // Print file contents with line numbers
         for (i, line) in contents.lines().enumerate() {
-            println!("{:4}│ {}", i + 1, line);
+            if !line.trim().is_empty() {
+                println!("{:4}│ {}", i + 1, line);
+            }
         }
     }
 

@@ -8,6 +8,7 @@ Repo Walker is a command-line tool for analyzing Git repositories and formatting
 - Filter files by extension
 - Apply regex pattern matching to file contents
 - Handle non-UTF-8 file contents
+- Strip comments from supported languages (Rust, JavaScript, Python, Go)
 - Beautiful, structured output with:
   - Directory tree visualization
   - Line-numbered file contents
@@ -48,6 +49,7 @@ repo_walker --path /path/to/repo --git-from v1.0 --git-to v2.0 [OPTIONS] | pbcop
 - `--git-from <REVISION>`: Starting Git revision for comparison
 - `--git-to <REVISION>`: Ending Git revision for comparison
 - `--excludes <PATTERN1,PATTERN2,...>`: Patterns to exclude from results
+- `--strip-comments`: Remove comments from supported languages (Rust, JavaScript, Python, Go)
 
 ## Output Format
 
@@ -107,6 +109,11 @@ This feature is particularly useful when preparing code for AI analysis, as it h
    repo_walker --path /path/to/repo --git-from main --git-to feature-branch --excludes "*_test.rs,*_spec.rs" | pbcopy
    ```
 
+4. View code with comments stripped:
+   ```bash
+   repo_walker --path /path/to/repo --strip-comments --extensions rs,js,py,go | pbcopy
+   ```
+
 ## Integration with AI Assistants
 
 Repo Walker is particularly useful when working with AI assistants that have token limits. The tool helps you:
@@ -114,6 +121,7 @@ Repo Walker is particularly useful when working with AI assistants that have tok
 2. Provide well-structured code context
 3. Focus on relevant parts of your codebase
 4. Track token usage to optimize your prompts
+5. Remove comments to focus on code logic and save tokens
 
 ## Error Handling
 
