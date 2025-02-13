@@ -1682,6 +1682,7 @@ dependencies = [
  "hex",
  "ignore",
  "itertools",
+ "libc",
  "predicates",
  "regex",
  "serde_json",

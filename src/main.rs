@@ -38,6 +38,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let mut formatter = OutputFormatter::new();
 
+    // Configure formatter with extensions and excludes if provided
+    if let Some(extensions) = args.extensions.clone() {
+        formatter = formatter.with_extensions(extensions);
+    }
+    if let Some(excludes) = args.excludes.clone() {
+        formatter = formatter.with_excludes(excludes);
+    }
+
     if args.git_from.is_some() || args.git_to.is_some() {
         return print_git_diff(&args, &mut formatter);
     }
